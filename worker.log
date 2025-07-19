@@ -1,0 +1,42 @@
+
+> rethinking-park-cf-worker@0.0.0 dev
+> wrangler dev
+
+Proxy environment variables detected. We'll use your proxy for fetch requests.
+
+ ⛅️ wrangler 4.25.0
+───────────────────
+Your Worker has access to the following bindings:
+Binding                             Resource                  Mode
+env.AI                              AI                        remote
+env.CACHE_TTL ("3600")              Environment Variable      local
+env.MAX_FILE_SIZE ("10485760")      Environment Variable      local
+
+❓ Your types might be out of date. Re-run `wrangler types` to ensure your types are correct.
+[33m▲ [43;33m[[43;30mWARNING[43;33m][0m [1mUsing Workers AI always accesses your Cloudflare account in order to run AI models, and so will incur usage charges even in local development.[0m
+
+
+⎔ Starting local server...
+[wrangler:info] Ready on http://localhost:8787
+[wrangler:info] GET /api/v1/health 200 OK (5ms)
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mAI analysis failed: InferenceUpstreamError: 10000: Authentication error[0m
+
+      at Ai._parseError (cloudflare-internal:ai-api:183:24)
+      at async Ai.run (cloudflare-internal:ai-api:158:19)
+      at async analyzeImageWithAI (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:81:20)
+      at async handleImageAnalysis (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:194:20)
+      at async Object.fetch (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:291:17)
+      at async jsonError (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts:22:10)
+      at async drainBody (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts:5:10)
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mImage analysis error: Error: Image analysis failed: 10000: Authentication error[0m
+
+      at analyzeImageWithAI (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:134:9)
+      at async handleImageAnalysis (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:194:20)
+      at async Object.fetch (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:291:17)
+      at async jsonError (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts:22:10)
+      at async drainBody (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts:5:10)
+
+
+[wrangler:info] POST /api/v1/analyze 500 Internal Server Error (46944ms)
