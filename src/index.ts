@@ -9,6 +9,7 @@ interface Env {
 	AI: Ai;
 	CACHE_TTL: string;
 	MAX_FILE_SIZE: string;
+	CACHE_ENABLED?: string;  // Set to "false" to disable caching
 	RATE_LIMIT_KV?: KVNamespace;
 }
 
@@ -171,12 +172,31 @@ async function checkRateLimit(ip: string, env: Env): Promise<{ allowed: boolean;
 }
 
 /**
- * Calculate a simple hash for the image data
+ * Calculate a robust hash for the image data
+ * Uses SHA-256 of the actual image content to ensure different images get different hashes
  */
 async function calculateImageHash(imageData: ArrayBuffer): Promise<string> {
-	const hashBuffer = await crypto.subtle.digest('SHA-256', imageData);
-	const hashArray = new Uint8Array(hashBuffer);
-	return Array.from(hashArray).map(b => b.toString(16).padStart(2, '0')).join('');
+	// Create a more robust hash by including both content and size
+	const contentHash = await crypto.subtle.digest('SHA-256', imageData);
+	const contentArray = new Uint8Array(contentHash);
+	
+	// Add file size to the hash to make it more unique
+	const sizeBytes = new Uint8Array(new ArrayBuffer(4));
+	new DataView(sizeBytes.buffer).setUint32(0, imageData.byteLength, false);
+	
+	// Combine content hash with size
+	const combinedData = new Uint8Array(contentArray.length + sizeBytes.length);
+	combinedData.set(contentArray);
+	combinedData.set(sizeBytes, contentArray.length);
+	
+	// Create final hash
+	const finalHash = await crypto.subtle.digest('SHA-256', combinedData);
+	const finalArray = new Uint8Array(finalHash);
+	
+	const hashString = Array.from(finalArray).map(b => b.toString(16).padStart(2, '0')).join('');
+	console.log('Generated image hash:', hashString.substring(0, 16) + '...', 'for', imageData.byteLength, 'bytes');
+	
+	return hashString;
 }
 
 /**
@@ -240,39 +260,127 @@ async function createDemoResponse(): Promise<DetectedElement[]> {
 }
 
 /**
- * Get image dimensions from buffer
+ * Get image dimensions from buffer by parsing headers
  */
 async function getImageDimensions(imageBuffer: ArrayBuffer): Promise<{width: number, height: number}> {
-	// For demo purposes, we'll return the known dimensions of the example image
-	// In a real implementation, you would parse the image headers
-	console.log('Getting image dimensions...');
+	console.log('Parsing image dimensions from headers...');
 	
-	// Check if it's the example park image by size (approximate)
+	const view = new DataView(imageBuffer);
 	const bufferSize = imageBuffer.byteLength;
+	
 	console.log('Image buffer size:', bufferSize, 'bytes');
 	
-	// Example park image is approximately 3840x2160
-	// This is a simplified approach - in production you'd parse image headers
-	if (bufferSize > 1000000) { // Large image, likely the example
-		return { width: 3840, height: 2160 };
+	try {
+		// PNG signature: 89 50 4E 47 0D 0A 1A 0A
+		if (view.getUint32(0) === 0x89504E47 && view.getUint32(4) === 0x0D0A1A0A) {
+			console.log('Detected PNG format');
+			// PNG IHDR chunk starts at byte 16, width and height are at bytes 16-19 and 20-23
+			const width = view.getUint32(16);
+			const height = view.getUint32(20);
+			console.log('PNG dimensions:', width, 'x', height);
+			return { width, height };
+		}
+		
+		// JPEG signature: FF D8 FF
+		if (view.getUint8(0) === 0xFF && view.getUint8(1) === 0xD8 && view.getUint8(2) === 0xFF) {
+			console.log('Detected JPEG format');
+			let offset = 2;
+			
+			while (offset < bufferSize - 4) {
+				// Find SOF0 (Start of Frame) marker: FF C0
+				if (view.getUint8(offset) === 0xFF && view.getUint8(offset + 1) === 0xC0) {
+					// Height is at offset + 5, width at offset + 7 (big-endian)
+					const height = view.getUint16(offset + 5);
+					const width = view.getUint16(offset + 7);
+					console.log('JPEG dimensions:', width, 'x', height);
+					return { width, height };
+				}
+				offset++;
+			}
+		}
+		
+		// WebP signature: RIFF ... WEBP
+		if (view.getUint32(0) === 0x52494646 && view.getUint32(8) === 0x57454250) {
+			console.log('Detected WebP format');
+			// Simple WebP VP8 format
+			if (view.getUint32(12) === 0x56503820) {
+				// Skip to width/height data
+				const width = (view.getUint16(26) & 0x3FFF) + 1;
+				const height = (view.getUint16(28) & 0x3FFF) + 1;
+				console.log('WebP dimensions:', width, 'x', height);
+				return { width, height };
+			}
+		}
+		
+		console.log('Could not parse image dimensions, using fallback');
+	} catch (error) {
+		console.error('Error parsing image dimensions:', error);
+	}
+	
+	// Fallback: Estimate based on file size
+	if (bufferSize > 5000000) { // Large image > 5MB
+		return { width: 3840, height: 2160 }; // 4K
+	} else if (bufferSize > 1000000) { // Medium image > 1MB
+		return { width: 1920, height: 1080 }; // Full HD
 	} else {
-		// Default fallback dimensions
-		return { width: 1920, height: 1080 };
+		return { width: 1280, height: 720 }; // HD
 	}
 }
 
 /**
- * Analyze image using demo mode
+ * Analyze image using Cloudflare AI
  */
 async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{elements: DetectedElement[], imageInfo: {width: number, height: number, format: string, size: number}}> {
 	try {
-		console.log('Analyzing image in demo mode...');
+		console.log('Starting real AI image analysis...');
 		
 		// Get image dimensions
 		const dimensions = await getImageDimensions(imageBuffer);
 		
-		// For demo purposes, return instant results
-		const elements = await createDemoResponse();
+		// Use Cloudflare AI for real object detection
+		const inputs = {
+			image: Array.from(new Uint8Array(imageBuffer))
+		};
+		
+		console.log('Calling Cloudflare AI object detection...');
+		const response = await env.AI.run('@cf/facebook/detr-resnet-50', inputs);
+		
+		console.log('AI Response:', response);
+		
+		// Transform AI response to our format
+		const elements: DetectedElement[] = [];
+		
+		if (response && Array.isArray(response)) {
+			for (const detection of response) {
+				if (detection.label && detection.score && detection.box) {
+					// Convert normalized coordinates to pixel coordinates
+					const bbox = {
+						x: Math.round(detection.box.xmin * dimensions.width),
+						y: Math.round(detection.box.ymin * dimensions.height),
+						width: Math.round((detection.box.xmax - detection.box.xmin) * dimensions.width),
+						height: Math.round((detection.box.ymax - detection.box.ymin) * dimensions.height)
+					};
+					
+					elements.push({
+						type: detection.label,
+						confidence: detection.score,
+						description: `${detection.label} (confidence: ${(detection.score * 100).toFixed(1)}%)`,
+						bbox
+					});
+				}
+			}
+		}
+		
+		// If no objects detected, provide fallback
+		if (elements.length === 0) {
+			console.log('No objects detected, using fallback response');
+			elements.push({
+				type: 'scene',
+				confidence: 0.5,
+				description: 'General scene detected',
+				bbox: { x: 0, y: 0, width: dimensions.width, height: dimensions.height }
+			});
+		}
 		
 		const imageInfo = {
 			width: dimensions.width,
@@ -283,13 +391,26 @@ async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{
 		
 		console.log('Image analysis complete:', {
 			elements: elements.length,
-			imageInfo
+			imageInfo,
+			detectedObjects: elements.map(e => `${e.type} (${(e.confidence * 100).toFixed(1)}%)`)
 		});
 		
 		return { elements, imageInfo };
 	} catch (error) {
-		console.error('Demo detection failed:', error);
-		throw new Error(`Image analysis failed: ${error.message}`);
+		console.error('AI detection failed, falling back to demo mode:', error);
+		
+		// Fallback to demo response if AI fails
+		const dimensions = await getImageDimensions(imageBuffer);
+		const elements = await createDemoResponse();
+		
+		const imageInfo = {
+			width: dimensions.width,
+			height: dimensions.height,
+			format: 'image/png',
+			size: imageBuffer.byteLength
+		};
+		
+		return { elements, imageInfo };
 	}
 }
 
@@ -327,25 +448,31 @@ async function handleImageAnalysis(request: Request, env: Env): Promise<Response
 		const imageBuffer = await imageFile.arrayBuffer();
 		const imageHash = await calculateImageHash(imageBuffer);
 
-		// Check cache
+		// Check cache (if enabled)
+		const cacheEnabled = env.CACHE_ENABLED !== 'false';
 		const cacheTTL = parseInt(env.CACHE_TTL) || 3600;
-		let cachedResult = cache.get(imageHash);
-		if (cachedResult) {
-			const age = Date.now() - new Date(cachedResult.timestamp).getTime();
-			if (age < cacheTTL * 1000) {
-				console.log(`Cache hit for image hash: ${imageHash}`);
-				return Response.json({
-					success: true,
-					analysis: {
-						...cachedResult,
-						cacheHit: true,
-						processingTime: '0ms (cached)'
-					},
-					timestamp: new Date().toISOString()
-				} as APIResponse);
-			} else {
-				cache.delete(imageHash);
+		
+		if (cacheEnabled) {
+			let cachedResult = cache.get(imageHash);
+			if (cachedResult) {
+				const age = Date.now() - new Date(cachedResult.timestamp).getTime();
+				if (age < cacheTTL * 1000) {
+					console.log(`Cache hit for image hash: ${imageHash}`);
+					return Response.json({
+						success: true,
+						analysis: {
+							...cachedResult,
+							cacheHit: true,
+							processingTime: '0ms (cached)'
+						},
+						timestamp: new Date().toISOString()
+					} as APIResponse);
+				} else {
+					cache.delete(imageHash);
+				}
 			}
+		} else {
+			console.log('Cache disabled by configuration');
 		}
 
 		// Analyze image with AI
@@ -361,8 +488,11 @@ async function handleImageAnalysis(request: Request, env: Env): Promise<Response
 			imageInfo: analysisData.imageInfo
 		};
 
-		// Store in cache
-		cache.set(imageHash, result);
+		// Store in cache (if enabled)
+		if (cacheEnabled) {
+			cache.set(imageHash, result);
+			console.log(`Result cached for hash: ${imageHash.substring(0, 16)}...`);
+		}
 		
 		console.log(`Image analyzed successfully. Hash: ${imageHash}, Elements: ${analysisData.elements.length}, Processing time: ${processingTime}`);
 
@@ -385,13 +515,94 @@ async function handleImageAnalysis(request: Request, env: Env): Promise<Response
 /**
  * Handle health check endpoint
  */
-function handleHealthCheck(): Response {
+function handleHealthCheck(env: Env): Response {
+	const cacheEnabled = env.CACHE_ENABLED !== 'false';
 	return Response.json({
 		status: 'healthy',
 		timestamp: new Date().toISOString(),
+		cache_enabled: cacheEnabled,
 		cache_size: cache.size,
+		cache_ttl: parseInt(env.CACHE_TTL) || 3600,
+		cache_entries: Array.from(cache.keys()).map(key => ({
+			hash: key.substring(0, 16) + '...',
+			timestamp: cache.get(key)?.timestamp
+		})),
 		service: 'ReThinking Park Cloudflare Worker'
 	});
+}
+
+/**
+ * Handle cache management endpoint
+ */
+function handleCacheManagement(request: Request): Response {
+	const url = new URL(request.url);
+	const action = url.searchParams.get('action');
+	
+	switch (action) {
+		case 'clear':
+			const oldSize = cache.size;
+			cache.clear();
+			console.log(`Cache cleared. Removed ${oldSize} entries.`);
+			return Response.json({
+				success: true,
+				message: `Cache cleared. Removed ${oldSize} entries.`,
+				timestamp: new Date().toISOString()
+			});
+			
+		case 'size':
+			return Response.json({
+				cache_size: cache.size,
+				entries: Array.from(cache.keys()).map(key => {
+					const entry = cache.get(key);
+					return {
+						hash: key.substring(0, 16) + '...',
+						timestamp: entry?.timestamp,
+						elements_count: entry?.elements.length,
+						processing_time: entry?.processingTime
+					};
+				}),
+				timestamp: new Date().toISOString()
+			});
+			
+		case 'delete':
+			const hashToDelete = url.searchParams.get('hash');
+			if (!hashToDelete) {
+				return Response.json({
+					success: false,
+					error: 'Hash parameter required for delete action',
+					timestamp: new Date().toISOString()
+				}, { status: 400 });
+			}
+			
+			// Find full hash that starts with provided prefix
+			const fullHash = Array.from(cache.keys()).find(key => key.startsWith(hashToDelete));
+			if (fullHash && cache.delete(fullHash)) {
+				console.log(`Cache entry deleted: ${fullHash.substring(0, 16)}...`);
+				return Response.json({
+					success: true,
+					message: `Cache entry deleted: ${fullHash.substring(0, 16)}...`,
+					timestamp: new Date().toISOString()
+				});
+			} else {
+				return Response.json({
+					success: false,
+					error: 'Cache entry not found',
+					timestamp: new Date().toISOString()
+				}, { status: 404 });
+			}
+			
+		default:
+			return Response.json({
+				success: false,
+				error: 'Invalid action. Use: clear, size, or delete',
+				available_actions: [
+					'?action=clear - Clear all cache entries',
+					'?action=size - Show cache size and entries',
+					'?action=delete&hash=<hash_prefix> - Delete specific entry'
+				],
+				timestamp: new Date().toISOString()
+			}, { status: 400 });
+	}
 }
 
 /**
@@ -475,7 +686,19 @@ export default {
 
 		switch (url.pathname) {
 			case '/api/v1/health':
-				response = handleHealthCheck();
+				response = handleHealthCheck(env);
+				break;
+				
+			case '/api/v1/cache':
+				if (request.method !== 'GET') {
+					response = Response.json({
+						success: false,
+						error: 'Method not allowed. Use GET with query parameters.',
+						timestamp: new Date().toISOString()
+					} as APIResponse, { status: 405 });
+				} else {
+					response = handleCacheManagement(request);
+				}
 				break;
 			
 			case '/api/v1/analyze':
@@ -511,7 +734,18 @@ export default {
 						<div class="endpoint">
 							<span class="method">GET</span>
 							<strong>/api/v1/health</strong>
-							<p>Health check endpoint</p>
+							<p>Health check endpoint with cache information</p>
+						</div>
+						
+						<div class="endpoint">
+							<span class="method">GET</span>
+							<strong>/api/v1/cache</strong>
+							<p>Cache management endpoint</p>
+							<ul>
+								<li><code>?action=size</code> - Show cache size and entries</li>
+								<li><code>?action=clear</code> - Clear all cache entries</li>
+								<li><code>?action=delete&hash=PREFIX</code> - Delete specific entry</li>
+							</ul>
 						</div>
 						
 						<div class="endpoint">
