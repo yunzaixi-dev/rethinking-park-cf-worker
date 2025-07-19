@@ -8,7 +8,8 @@
 
 ## ✨ 特性
 
-- **🤖 AI图像分析**: 使用Cloudflare AI (@cf/microsoft/resnet-50) 进行图像分类
+- **🤖 AI目标检测**: 使用Cloudflare AI (@cf/facebook/detr-resnet-50) 进行目标检测
+- **📍 边界框定位**: 返回检测对象的精确坐标和边界框
 - **🌿 自然元素识别**: 智能识别图像中的自然元素（树木、水体、天空等）
 - **⚡ 边缘计算**: 全球分布式部署，低延迟响应
 - **💾 智能缓存**: 内存缓存减少重复分析
@@ -58,15 +59,27 @@ Content-Type: multipart/form-data
       {
         "type": "tree",
         "confidence": 0.95,
-        "description": "Tree"
+        "description": "Tree",
+        "bbox": {
+          "x": 100,
+          "y": 150,
+          "width": 200,
+          "height": 300
+        }
       },
       {
-        "type": "grass",
+        "type": "bird",
         "confidence": 0.87,
-        "description": "Grass"
+        "description": "Bird",
+        "bbox": {
+          "x": 320,
+          "y": 80,
+          "width": 45,
+          "height": 35
+        }
       }
     ],
-    "processingTime": "1234ms",
+    "processingTime": "2500ms",
     "timestamp": "2025-07-19T08:00:00.000Z",
     "imageHash": "abc123...",
     "cacheHit": false

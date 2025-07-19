@@ -17,26 +17,157 @@ env.MAX_FILE_SIZE ("10485760")      Environment Variable      local
 
 
 ⎔ Starting local server...
-[wrangler:info] Ready on http://localhost:8787
-[wrangler:info] GET /api/v1/health 200 OK (5ms)
-[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mAI analysis failed: InferenceUpstreamError: 10000: Authentication error[0m
+[wrangler:info] Ready on http://localhost:33931
+⎔ Reloading local server...
+⎔ Reloading local server...
+⎔ Reloading local server...
+⎔ Reloading local server...
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
 
-      at Ai._parseError (cloudflare-internal:ai-api:183:24)
-      at async Ai.run (cloudflare-internal:ai-api:158:19)
-      at async analyzeImageWithAI (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:81:20)
-      at async handleImageAnalysis (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:194:20)
-      at async Object.fetch (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:291:17)
-      at async jsonError (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts:22:10)
-      at async drainBody (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts:5:10)
-
-
-[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mImage analysis error: Error: Image analysis failed: 10000: Authentication error[0m
-
-      at analyzeImageWithAI (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:134:9)
-      at async handleImageAnalysis (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:194:20)
-      at async Object.fetch (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/src/index.ts:291:17)
-      at async jsonError (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-miniflare3-json-error.ts:22:10)
-      at async drainBody (file:///home/yun/%E6%96%87%E6%A1%A3/localai-v1/rethinking-park-cf-worker/node_modules/wrangler/templates/middleware/middleware-ensure-req-body-drained.ts:5:10)
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:424:0:
+  [37m      424 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
 
 
-[wrangler:info] POST /api/v1/analyze 500 Internal Server Error (46944ms)
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:391:0:
+  [37m      391 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:403:0:
+  [37m      403 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:407:0:
+  [37m      407 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:406:0:
+  [37m      406 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+⎔ Reloading local server...
+⎔ Reloading local server...
+⎔ Reloading local server...
+Your Worker has access to the following bindings:
+Binding                             Resource                  Mode
+env.AI                              AI                        remote
+env.CACHE_TTL ("3600")              Environment Variable      local
+env.MAX_FILE_SIZE ("10485760")      Environment Variable      local
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mInvalid Routes:[0m
+
+  api.rethinkingpark.com/*:
+  Wildcard operators (*) are not allowed in Custom Domains
+  Paths are not allowed in Custom Domains
+
+
+🪵  Logs were written to "/home/yun/.config/.wrangler/logs/wrangler-2025-07-19_03-43-33_889.log"
+server...
+⎔ Reloading local server...
+⎔ Reloading local server...
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:424:0:
+  [37m      424 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:391:0:
+  [37m      391 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:403:0:
+  [37m      403 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:407:0:
+  [37m      407 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mBuild failed with 1 error:[0m
+
+  [31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mUnexpected "export"[0m
+  
+      src/index.ts:406:0:
+  [37m      406 │ [32mexport[37m default {
+            ╵ [32m~~~~~~[0m
+  
+  
+
+
+⎔ Reloading local server...
+⎔ Reloading local server...
+⎔ Reloading local server...
+Your Worker has access to the following bindings:
+Binding                             Resource                  Mode
+env.AI                              AI                        remote
+env.CACHE_TTL ("3600")              Environment Variable      local
+env.MAX_FILE_SIZE ("10485760")      Environment Variable      local
+
+
+[31m✘ [41;31m[[41;97mERROR[41;31m][0m [1mInvalid Routes:[0m
+
+  api.rethinkingpark.com/*:
+  Wildcard operators (*) are not allowed in Custom Domains
+  Paths are not allowed in Custom Domains
+
+
+🪵  Logs were written to "/home/yun/.config/.wrangler/logs/wrangler-2025-07-19_02-50-31_588.log"

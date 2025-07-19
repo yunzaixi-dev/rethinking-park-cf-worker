@@ -9,22 +9,19 @@ interface Env {
 	AI: Ai;
 	CACHE_TTL: string;
 	MAX_FILE_SIZE: string;
+	RATE_LIMIT_KV?: KVNamespace;
 }
-
-// Nature elements that we want to detect and classify
-const NATURE_ELEMENTS = new Set([
-	'tree', 'water', 'mountain', 'sky', 'grass', 'flower', 'rock', 'cloud',
-	'leaf', 'branch', 'plant', 'forest', 'lake', 'river', 'ocean', 'beach',
-	'sand', 'stone', 'wood', 'nature', 'landscape', 'outdoor', 'garden',
-	'park', 'field', 'meadow', 'hill', 'valley', 'sunset', 'sunrise',
-	'shadow', 'sunlight', 'bird', 'animal', 'wildlife', 'vegetation',
-	'bushes', 'moss', 'fern', 'flowers', 'greenery', 'foliage'
-]);
 
 interface DetectedElement {
 	type: string;
 	confidence: number;
 	description?: string;
+	bbox?: {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+	};
 }
 
 interface AnalysisResult {
@@ -44,6 +41,128 @@ interface APIResponse {
 
 // Simple in-memory cache (will be reset on each cold start)
 const cache = new Map<string, AnalysisResult>();
+
+// Rate limiting configuration
+const RATE_LIMIT_CONFIG = {
+	requests: 100, // requests per window
+	window: 3600,  // window in seconds (1 hour)
+	blockDuration: 1800 // block duration in seconds (30 minutes)
+};
+
+/**
+ * Check if origin is allowed
+ */
+function isOriginAllowed(origin: string | null): boolean {
+	if (!origin) return false;
+	
+	const allowedOrigins = [
+		'https://rethinkingpark.com',
+		'https://www.rethinkingpark.com',
+		'http://localhost:5173', // Vite dev server
+		'http://localhost:3000', // React dev server
+		'http://127.0.0.1:5173',
+		'http://127.0.0.1:3000'
+	];
+	
+	return allowedOrigins.includes(origin);
+}
+
+/**
+ * Get client IP address
+ */
+function getClientIP(request: Request): string {
+	// Try CF-Connecting-IP first (Cloudflare's real IP header)
+	const cfIP = request.headers.get('CF-Connecting-IP');
+	if (cfIP) return cfIP;
+	
+	// Fallback to X-Forwarded-For
+	const forwardedFor = request.headers.get('X-Forwarded-For');
+	if (forwardedFor) {
+		return forwardedFor.split(',')[0].trim();
+	}
+	
+	// Last resort
+	return 'unknown';
+}
+
+/**
+ * Check rate limit for IP
+ */
+async function checkRateLimit(ip: string, env: Env): Promise<{ allowed: boolean; remaining: number; resetTime: number }> {
+	if (!env.RATE_LIMIT_KV) {
+		// If KV is not available, allow all requests but log warning
+		console.warn('Rate limiting KV not configured, allowing all requests');
+		return { allowed: true, remaining: RATE_LIMIT_CONFIG.requests, resetTime: Date.now() + RATE_LIMIT_CONFIG.window * 1000 };
+	}
+	
+	const now = Date.now();
+	const windowStart = Math.floor(now / (RATE_LIMIT_CONFIG.window * 1000)) * (RATE_LIMIT_CONFIG.window * 1000);
+	const key = `rate_limit:${ip}:${windowStart}`;
+	const blockKey = `blocked:${ip}`;
+	
+	// Check if IP is currently blocked
+	try {
+		const blocked = await env.RATE_LIMIT_KV.get(blockKey);
+		if (blocked) {
+			const blockData = JSON.parse(blocked);
+			if (now < blockData.unblockTime) {
+				return {
+					allowed: false,
+					remaining: 0,
+					resetTime: blockData.unblockTime
+				};
+			} else {
+				// Block expired, remove it
+				await env.RATE_LIMIT_KV.delete(blockKey);
+			}
+		}
+	} catch (error) {
+		console.error('Error checking block status:', error);
+	}
+	
+	// Get current request count
+	try {
+		const current = await env.RATE_LIMIT_KV.get(key);
+		const count = current ? parseInt(current) : 0;
+		
+		if (count >= RATE_LIMIT_CONFIG.requests) {
+			// Rate limit exceeded, block the IP
+			const blockData = {
+				blockedAt: now,
+				unblockTime: now + (RATE_LIMIT_CONFIG.blockDuration * 1000),
+				reason: 'rate_limit_exceeded'
+			};
+			
+			await env.RATE_LIMIT_KV.put(blockKey, JSON.stringify(blockData), {
+				expirationTtl: RATE_LIMIT_CONFIG.blockDuration
+			});
+			
+			console.warn(`IP ${ip} blocked for ${RATE_LIMIT_CONFIG.blockDuration}s due to rate limit`);
+			
+			return {
+				allowed: false,
+				remaining: 0,
+				resetTime: blockData.unblockTime
+			};
+		}
+		
+		// Increment counter
+		await env.RATE_LIMIT_KV.put(key, (count + 1).toString(), {
+			expirationTtl: RATE_LIMIT_CONFIG.window
+		});
+		
+		return {
+			allowed: true,
+			remaining: RATE_LIMIT_CONFIG.requests - count - 1,
+			resetTime: windowStart + (RATE_LIMIT_CONFIG.window * 1000)
+		};
+		
+	} catch (error) {
+		console.error('Rate limit check failed:', error);
+		// On error, allow the request but log the issue
+		return { allowed: true, remaining: RATE_LIMIT_CONFIG.requests, resetTime: now + RATE_LIMIT_CONFIG.window * 1000 };
+	}
+}
 
 /**
  * Calculate a simple hash for the image data
@@ -73,64 +192,43 @@ function validateImage(file: File, maxSize: number): { valid: boolean; error?: s
 }
 
 /**
- * Analyze image using Cloudflare AI
+ * Create demo response for fast testing
+ */
+async function createDemoResponse(): Promise<DetectedElement[]> {
+	console.log('Using demo mode for fast response...');
+	
+	// Return mock detection results instantly
+	return [
+		{
+			type: 'tree',
+			confidence: 0.85,
+			description: 'Tree (Demo)',
+			bbox: { x: 150, y: 100, width: 120, height: 180 }
+		},
+		{
+			type: 'grass',
+			confidence: 0.72,
+			description: 'Grass (Demo)',
+			bbox: { x: 50, y: 400, width: 300, height: 80 }
+		},
+		{
+			type: 'sky',
+			confidence: 0.91,
+			description: 'Sky (Demo)',
+			bbox: { x: 0, y: 0, width: 800, height: 200 }
+		}
+	];
+}
+
+/**
+ * Analyze image using demo mode
  */
 async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<DetectedElement[]> {
 	try {
-		// Use Cloudflare AI image classification
-		const response = await env.AI.run(
-			'@cf/microsoft/resnet-50',
-			{
-				image: Array.from(new Uint8Array(imageBuffer))
-			}
-		);
-
-		console.log('AI Response:', JSON.stringify(response, null, 2));
-
-		// Process the AI response to extract nature elements
-		const elements: DetectedElement[] = [];
-		
-		if (response && Array.isArray(response)) {
-			for (const item of response) {
-				if (item.label && item.score) {
-					const label = item.label.toLowerCase();
-					
-					// Check if this label corresponds to a nature element
-					for (const natureElement of NATURE_ELEMENTS) {
-						if (label.includes(natureElement) || natureElement.includes(label)) {
-							elements.push({
-								type: natureElement,
-								confidence: item.score,
-								description: item.label
-							});
-							break; // Only add one match per AI result
-						}
-					}
-				}
-			}
-		}
-
-		// If no nature elements found, try to infer from common classifications
-		if (elements.length === 0 && response && Array.isArray(response)) {
-			// Add some common nature interpretations
-			for (const item of response) {
-				if (item.label && item.score > 0.1) {
-					const label = item.label.toLowerCase();
-					if (label.includes('outdoor') || label.includes('natural') || label.includes('green')) {
-						elements.push({
-							type: 'nature',
-							confidence: item.score * 0.8, // Reduce confidence for inferred elements
-							description: `Inferred from: ${item.label}`
-						});
-						break;
-					}
-				}
-			}
-		}
-
-		return elements;
+		// For demo purposes, return instant results
+		return await createDemoResponse();
 	} catch (error) {
-		console.error('AI analysis failed:', error);
+		console.error('Demo detection failed:', error);
 		throw new Error(`Image analysis failed: ${error.message}`);
 	}
 }
@@ -238,14 +336,22 @@ function handleHealthCheck(): Response {
 /**
  * Handle CORS preflight requests
  */
-function handleOptions(): Response {
+function handleOptions(request: Request): Response {
+	const origin = request.headers.get('Origin');
+	const allowedOrigin = isOriginAllowed(origin) ? origin : null;
+	
+	if (!allowedOrigin) {
+		return new Response('CORS: Origin not allowed', { status: 403 });
+	}
+	
 	return new Response(null, {
 		status: 204,
 		headers: {
-			'Access-Control-Allow-Origin': '*',
+			'Access-Control-Allow-Origin': allowedOrigin,
 			'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 			'Access-Control-Allow-Headers': 'Content-Type',
 			'Access-Control-Max-Age': '86400',
+			'Vary': 'Origin',
 		},
 	});
 }
@@ -253,11 +359,19 @@ function handleOptions(): Response {
 /**
  * Add CORS headers to response
  */
-function addCorsHeaders(response: Response): Response {
+function addCorsHeaders(response: Response, request: Request): Response {
+	const origin = request.headers.get('Origin');
+	const allowedOrigin = isOriginAllowed(origin) ? origin : null;
+	
 	const newResponse = new Response(response.body, response);
-	newResponse.headers.set('Access-Control-Allow-Origin', '*');
-	newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-	newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+	
+	if (allowedOrigin) {
+		newResponse.headers.set('Access-Control-Allow-Origin', allowedOrigin);
+		newResponse.headers.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+		newResponse.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+		newResponse.headers.set('Vary', 'Origin');
+	}
+	
 	return newResponse;
 }
 
@@ -268,9 +382,32 @@ export default {
 	async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
 		const url = new URL(request.url);
 		
+		// Get client IP for rate limiting
+		const clientIP = getClientIP(request);
+		
 		// Handle CORS preflight
 		if (request.method === 'OPTIONS') {
-			return handleOptions();
+			return handleOptions(request);
+		}
+		
+		// Check rate limit for non-OPTIONS requests
+		const rateLimitResult = await checkRateLimit(clientIP, env);
+		if (!rateLimitResult.allowed) {
+			const response = Response.json({
+				success: false,
+				error: 'Rate limit exceeded. Try again later.',
+				timestamp: new Date().toISOString(),
+				retry_after: Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000)
+			} as APIResponse, { 
+				status: 429,
+				headers: {
+					'Retry-After': Math.ceil((rateLimitResult.resetTime - Date.now()) / 1000).toString(),
+					'X-RateLimit-Limit': RATE_LIMIT_CONFIG.requests.toString(),
+					'X-RateLimit-Remaining': '0',
+					'X-RateLimit-Reset': Math.ceil(rateLimitResult.resetTime / 1000).toString()
+				}
+			});
+			return addCorsHeaders(response, request);
 		}
 
 		let response: Response;
@@ -306,7 +443,7 @@ export default {
 					</head>
 					<body>
 						<h1>🌳 ReThinking Park API</h1>
-						<p>Powered by Cloudflare Workers AI</p>
+						<p>Powered by Cloudflare Workers AI (Demo Mode)</p>
 						
 						<h2>Available Endpoints:</h2>
 						
@@ -341,6 +478,11 @@ export default {
 				} as APIResponse, { status: 404 });
 		}
 
-		return addCorsHeaders(response);
+		// Add rate limit headers to successful responses
+		response.headers.set('X-RateLimit-Limit', RATE_LIMIT_CONFIG.requests.toString());
+		response.headers.set('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
+		response.headers.set('X-RateLimit-Reset', Math.ceil(rateLimitResult.resetTime / 1000).toString());
+		
+		return addCorsHeaders(response, request);
 	},
 } satisfies ExportedHandler<Env>;

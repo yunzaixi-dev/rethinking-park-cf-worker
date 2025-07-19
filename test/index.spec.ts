@@ -2,40 +2,83 @@ import { env, createExecutionContext, waitOnExecutionContext, SELF } from 'cloud
 import { describe, it, expect } from 'vitest';
 import worker from '../src';
 
-describe('Hello World user worker', () => {
-	describe('request for /message', () => {
-		it('/ responds with "Hello, World!" (unit style)', async () => {
-			const request = new Request<unknown, IncomingRequestCfProperties>('http://example.com/message');
-			// Create an empty context to pass to `worker.fetch()`.
+describe('ReThinking Park API Worker', () => {
+	describe('Health Check', () => {
+		it('GET /api/v1/health returns healthy status', async () => {
+			const request = new Request('http://example.com/api/v1/health');
 			const ctx = createExecutionContext();
 			const response = await worker.fetch(request, env, ctx);
-			// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
 			await waitOnExecutionContext(ctx);
-			expect(await response.text()).toMatchInlineSnapshot(`"Hello, World!"`);
-		});
-
-		it('responds with "Hello, World!" (integration style)', async () => {
-			const request = new Request('http://example.com/message');
-			const response = await SELF.fetch(request);
-			expect(await response.text()).toMatchInlineSnapshot(`"Hello, World!"`);
+			
+			expect(response.status).toBe(200);
+			const data = await response.json();
+			expect(data).toHaveProperty('status', 'healthy');
+			expect(data).toHaveProperty('service', 'ReThinking Park Cloudflare Worker');
 		});
 	});
 
-	describe('request for /random', () => {
-		it('/ responds with a random UUID (unit style)', async () => {
-			const request = new Request<unknown, IncomingRequestCfProperties>('http://example.com/random');
-			// Create an empty context to pass to `worker.fetch()`.
+	describe('Root endpoint', () => {
+		it('GET / returns HTML documentation', async () => {
+			const request = new Request('http://example.com/');
 			const ctx = createExecutionContext();
 			const response = await worker.fetch(request, env, ctx);
-			// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
 			await waitOnExecutionContext(ctx);
-			expect(await response.text()).toMatch(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/);
+			
+			expect(response.status).toBe(200);
+			expect(response.headers.get('Content-Type')).toBe('text/html');
+			const html = await response.text();
+			expect(html).toContain('ReThinking Park API');
+		});
+	});
+
+	describe('Image Analysis', () => {
+		it('POST /api/v1/analyze requires image file', async () => {
+			const formData = new FormData();
+			const request = new Request('http://example.com/api/v1/analyze', {
+				method: 'POST',
+				body: formData
+			});
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json();
+			expect(data.success).toBe(false);
+			expect(data.error).toBe('No image file provided');
 		});
 
-		it('responds with a random UUID (integration style)', async () => {
-			const request = new Request('http://example.com/random');
-			const response = await SELF.fetch(request);
-			expect(await response.text()).toMatch(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/);
+		it('POST /api/v1/analyze validates file type', async () => {
+			const formData = new FormData();
+			const textFile = new File(['test'], 'test.txt', { type: 'text/plain' });
+			formData.append('image', textFile);
+			
+			const request = new Request('http://example.com/api/v1/analyze', {
+				method: 'POST',
+				body: formData
+			});
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(400);
+			const data = await response.json();
+			expect(data.success).toBe(false);
+			expect(data.error).toContain('Invalid image format');
+		});
+	});
+
+	describe('404 handling', () => {
+		it('returns 404 for unknown endpoints', async () => {
+			const request = new Request('http://example.com/unknown');
+			const ctx = createExecutionContext();
+			const response = await worker.fetch(request, env, ctx);
+			await waitOnExecutionContext(ctx);
+			
+			expect(response.status).toBe(404);
+			const data = await response.json();
+			expect(data.success).toBe(false);
+			expect(data.error).toBe('Not Found');
 		});
 	});
 });

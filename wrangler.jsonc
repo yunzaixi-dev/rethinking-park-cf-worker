@@ -29,6 +29,18 @@
 	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
 	 */
 	"ai": { "binding": "AI" },
+	
+	/**
+	 * KV Namespaces for rate limiting
+	 * https://developers.cloudflare.com/workers/wrangler/configuration/#kv-namespaces
+	 */
+	"kv_namespaces": [
+		{
+			"binding": "RATE_LIMIT_KV",
+			"id": "35bf3b29809f411ab8d72562319c2180",
+			"preview_id": "37185e7c6e89428cbc78d9ef647c241c"
+		}
+	],
 
 	/**
 	 * Environment Variables
@@ -38,6 +50,15 @@
 		"CACHE_TTL": "3600",
 		"MAX_FILE_SIZE": "10485760"
 	},
+
+	/**
+	 * Custom Domain Routes
+	 * https://developers.cloudflare.com/workers/configuration/routing/routes/
+	 */
+	"routes": [
+		"api.rethinkingpark.com/*"
+	],
+
 	/**
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
