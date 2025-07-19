@@ -34,16 +34,30 @@ export async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Pr
 		// 将AI响应转换为我们的格式
 		const elements: DetectedElement[] = [];
 		
+		console.log('Image dimensions for coordinate conversion:', dimensions);
+		
 		if (response && Array.isArray(response)) {
 			for (const detection of response as Detection[]) {
 				if (detection.label && detection.score && detection.box) {
+					console.log('Raw detection box:', detection.box);
+					console.log('Dimensions used for conversion:', dimensions);
+					
 					// Convert normalized coordinates to pixel coordinates
+					// Check if coordinates are in 0-1000 range instead of 0-1 range
+					const xmin = detection.box.xmin > 1 ? detection.box.xmin / 1000 : detection.box.xmin;
+					const ymin = detection.box.ymin > 1 ? detection.box.ymin / 1000 : detection.box.ymin;
+					const xmax = detection.box.xmax > 1 ? detection.box.xmax / 1000 : detection.box.xmax;
+					const ymax = detection.box.ymax > 1 ? detection.box.ymax / 1000 : detection.box.ymax;
+					
 					const bbox = {
-						x: Math.round(detection.box.xmin * dimensions.width),
-						y: Math.round(detection.box.ymin * dimensions.height),
-						width: Math.round((detection.box.xmax - detection.box.xmin) * dimensions.width),
-						height: Math.round((detection.box.ymax - detection.box.ymin) * dimensions.height)
+						x: Math.round(xmin * dimensions.width),
+						y: Math.round(ymin * dimensions.height),
+						width: Math.round((xmax - xmin) * dimensions.width),
+						height: Math.round((ymax - ymin) * dimensions.height)
 					};
+					
+					console.log('Converted bbox:', bbox);
+					console.log('Scale factors: width =', dimensions.width, ', height =', dimensions.height);
 					
 					elements.push({
 						type: detection.label,

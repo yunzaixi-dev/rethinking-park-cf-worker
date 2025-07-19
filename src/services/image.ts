@@ -23,9 +23,12 @@ export async function getImageDimensions(imageBuffer: ArrayBuffer): Promise<{wid
 		if (view.getUint32(0) === 0x89504E47 && view.getUint32(4) === 0x0D0A1A0A) {
 			console.log('Detected PNG format');
 			// PNG IHDR chunk starts at byte 16, width and height are at bytes 16-19 and 20-23
-			const width = view.getUint32(16);
-			const height = view.getUint32(20);
+			// PNG stores dimensions in big-endian format
+			const width = view.getUint32(16, false);  // false = big-endian
+			const height = view.getUint32(20, false); // false = big-endian
+			
 			console.log('PNG dimensions:', width, 'x', height);
+			
 			return { width, height };
 		}
 		

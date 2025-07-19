@@ -48,7 +48,7 @@
 	 */
 	"vars": { 
 		"CACHE_TTL": "3600",
-		"MAX_FILE_SIZE": "10485760"
+		"MAX_FILE_SIZE": "15728640"
 	},
 
 	/**
@@ -57,7 +57,7 @@
 	 */
 	"routes": [
 		"api.rethinkingpark.com/*"
-	],
+	]
 
 	/**
 	 * Note: Use secrets to store sensitive data.
