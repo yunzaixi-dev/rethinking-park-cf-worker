@@ -40,24 +40,23 @@ export async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Pr
 			for (const detection of response as Detection[]) {
 				if (detection.label && detection.score && detection.box) {
 					console.log('Raw detection box:', detection.box);
-					console.log('Dimensions used for conversion:', dimensions);
 					
-					// Convert normalized coordinates to pixel coordinates
-					// Check if coordinates are in 0-1000 range instead of 0-1 range
+					// Keep coordinates in normalized format (0-1 range)
+					// Check if coordinates are in 0-1000 range and normalize them
 					const xmin = detection.box.xmin > 1 ? detection.box.xmin / 1000 : detection.box.xmin;
 					const ymin = detection.box.ymin > 1 ? detection.box.ymin / 1000 : detection.box.ymin;
 					const xmax = detection.box.xmax > 1 ? detection.box.xmax / 1000 : detection.box.xmax;
 					const ymax = detection.box.ymax > 1 ? detection.box.ymax / 1000 : detection.box.ymax;
 					
+					// Return normalized bbox (0-1 range)
 					const bbox = {
-						x: Math.round(xmin * dimensions.width),
-						y: Math.round(ymin * dimensions.height),
-						width: Math.round((xmax - xmin) * dimensions.width),
-						height: Math.round((ymax - ymin) * dimensions.height)
+						x: xmin,
+						y: ymin,
+						width: xmax - xmin,
+						height: ymax - ymin
 					};
 					
-					console.log('Converted bbox:', bbox);
-					console.log('Scale factors: width =', dimensions.width, ', height =', dimensions.height);
+					console.log('Normalized bbox:', bbox);
 					
 					elements.push({
 						type: detection.label,
@@ -76,7 +75,7 @@ export async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Pr
 				type: 'scene',
 				confidence: 0.5,
 				description: 'General scene detected',
-				bbox: { x: 0, y: 0, width: dimensions.width, height: dimensions.height }
+				bbox: { x: 0, y: 0, width: 1, height: 1 }  // 归一化坐标：整个图像
 			});
 		}
 		

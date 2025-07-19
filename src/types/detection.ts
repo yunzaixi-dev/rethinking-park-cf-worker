@@ -6,11 +6,11 @@ export interface DetectedElement {
 	type: string;        // 元素类型（如树、草地、建筑等）
 	confidence: number;  // 置信度（0-1之间的浮点数）
 	description?: string; // 可选的元素描述文本
-	bbox?: {             // 可选的边界框（bounding box），定义元素在图像中的位置
-		x: number;        // 左上角X坐标（像素）
-		y: number;        // 左上角Y坐标（像素）
-		width: number;    // 宽度（像素）
-		height: number;   // 高度（像素）
+	bbox?: {             // 可选的边界框（bounding box），定义元素在图像中的位置（归一化坐标 0-1）
+		x: number;        // 左上角X坐标（归一化，0-1）
+		y: number;        // 左上角Y坐标（归一化，0-1）
+		width: number;    // 宽度（归一化，0-1）
+		height: number;   // 高度（归一化，0-1）
 	};
 }
 
