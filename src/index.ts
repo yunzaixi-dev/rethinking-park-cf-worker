@@ -25,6 +25,18 @@ interface DetectedElement {
 	};
 }
 
+// AI模型返回的检测结果类型
+interface Detection {
+	score?: number;
+	label?: string;
+	box?: {
+		xmin: number;
+		ymin: number;
+		xmax: number;
+		ymax: number;
+	};
+}
+
 interface AnalysisResult {
 	elements: DetectedElement[];
 	processingTime: string;
@@ -351,7 +363,7 @@ async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{
 		const elements: DetectedElement[] = [];
 		
 		if (response && Array.isArray(response)) {
-			for (const detection of response) {
+			for (const detection of response as Detection[]) {
 				if (detection.label && detection.score && detection.box) {
 					// Convert normalized coordinates to pixel coordinates
 					const bbox = {
@@ -506,7 +518,7 @@ async function handleImageAnalysis(request: Request, env: Env): Promise<Response
 		console.error('Image analysis error:', error);
 		return Response.json({
 			success: false,
-			error: error.message || 'Failed to analyze image',
+			error: (error as Error).message || 'Failed to analyze image',
 			timestamp: new Date().toISOString()
 		} as APIResponse, { status: 500 });
 	}
