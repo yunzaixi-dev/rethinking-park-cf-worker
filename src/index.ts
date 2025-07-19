@@ -1,75 +1,113 @@
 /**
- * ReThinking Park - Cloudflare Worker AI Backend
+ * ReThinking Park - Cloudflare Worker AI 后端
  * 
- * This worker provides image analysis services using Cloudflare AI
- * for the ReThinking Park project.
+ * 该Worker提供基于Cloudflare AI的图像分析服务
+ * 用于ReThinking Park项目
+ * 
+ * 主要功能：
+ * 1. 图像识别与分析（使用AI检测图像中的元素）
+ * 2. 结果缓存（提高性能并减少API调用）
+ * 3. 请求速率限制（防止滥用）
+ * 4. 跨域资源共享（CORS）支持
+ * 5. 健康检查端点
+ * 6. 缓存管理功能
  */
 
+/**
+ * 环境变量接口
+ * 定义Worker运行时需要访问的环境变量和绑定资源
+ */
 interface Env {
-	AI: Ai;
-	CACHE_TTL: string;
-	MAX_FILE_SIZE: string;
-	CACHE_ENABLED?: string;  // Set to "false" to disable caching
-	RATE_LIMIT_KV?: KVNamespace;
+	AI: Ai;                  // Cloudflare AI绑定，提供AI模型访问
+	CACHE_TTL: string;       // 缓存生存时间（秒）
+	MAX_FILE_SIZE: string;   // 最大允许的文件大小（字节）
+	CACHE_ENABLED?: string;  // 设置为"false"以禁用缓存功能
+	RATE_LIMIT_KV?: KVNamespace; // KV命名空间，用于存储速率限制数据
 }
 
+/**
+ * 检测到的元素接口
+ * 定义从图像中检测到的单个元素的结构
+ */
 interface DetectedElement {
-	type: string;
-	confidence: number;
-	description?: string;
-	bbox?: {
-		x: number;
-		y: number;
-		width: number;
-		height: number;
+	type: string;        // 元素类型（如树、草地、建筑等）
+	confidence: number;  // 置信度（0-1之间的浮点数）
+	description?: string; // 可选的元素描述文本
+	bbox?: {             // 可选的边界框（bounding box），定义元素在图像中的位置
+		x: number;        // 左上角X坐标（像素）
+		y: number;        // 左上角Y坐标（像素）
+		width: number;    // 宽度（像素）
+		height: number;   // 高度（像素）
 	};
 }
 
-// AI模型返回的检测结果类型
+/**
+ * AI模型返回的原始检测结果类型
+ * 定义AI模型API返回的原始检测数据结构
+ */
 interface Detection {
-	score?: number;
-	label?: string;
-	box?: {
-		xmin: number;
-		ymin: number;
-		xmax: number;
-		ymax: number;
+	score?: number;   // 检测置信度分数（0-1之间的浮点数）
+	label?: string;   // 检测到的对象标签/类别
+	box?: {           // 归一化坐标中的边界框（值在0-1之间）
+		xmin: number;  // 左边界（归一化）
+		ymin: number;  // 上边界（归一化）
+		xmax: number;  // 右边界（归一化）
+		ymax: number;  // 下边界（归一化）
 	};
 }
 
+/**
+ * 分析结果接口
+ * 定义图像分析完成后返回的完整结果结构
+ */
 interface AnalysisResult {
-	elements: DetectedElement[];
-	processingTime: string;
-	timestamp: string;
-	imageHash: string;
-	cacheHit: boolean;
-	imageInfo: {
-		width: number;
-		height: number;
-		format: string;
-		size: number;
+	elements: DetectedElement[]; // 检测到的元素数组
+	processingTime: string;     // 处理时间（毫秒）
+	timestamp: string;          // 分析完成的时间戳（ISO格式）
+	imageHash: string;          // 图像内容的唯一哈希值（用于缓存）
+	cacheHit: boolean;          // 是否命中缓存的标志
+	imageInfo: {                // 图像的元数据信息
+		width: number;          // 图像宽度（像素）
+		height: number;         // 图像高度（像素）
+		format: string;         // 图像格式（如'jpeg'、'png'）
+		size: number;           // 图像大小（字节）
 	};
 }
 
+/**
+ * API响应接口
+ * 定义API端点返回给客户端的响应结构
+ */
 interface APIResponse {
-	success: boolean;
-	analysis?: AnalysisResult;
-	error?: string;
-	timestamp: string;
+	success: boolean;          // 请求是否成功处理
+	analysis?: AnalysisResult; // 成功时返回的分析结果
+	error?: string;            // 失败时返回的错误信息
+	timestamp: string;         // 响应生成的时间戳（ISO格式）
 }
 
-// Simple in-memory cache (will be reset on each cold start)
+/**
+ * 简单的内存缓存
+ * 用于存储分析结果，以图像哈希为键
+ * 注意：每次Worker冷启动时会重置
+ */
 const cache = new Map<string, AnalysisResult>();
 
-// Rate limiting configuration
+/**
+ * 速率限制配置
+ * 定义API请求速率限制参数
+ */
 const RATE_LIMIT_CONFIG = {
-	requests: 100, // requests per window
-	window: 3600,  // window in seconds (1 hour)
-	blockDuration: 1800 // block duration in seconds (30 minutes)
+	requests: 100, // 每个时间窗口内允许的请求数
+	window: 3600,  // 时间窗口大小（秒，当前设置为1小时）
+	blockDuration: 1800 // 超出限制后的封禁时长（秒，当前设置为30分钟）
 };
 
 /**
- * Check if origin is allowed
+ * 检查请求源是否被允许
+ * 实现CORS（跨域资源共享）策略，验证请求源是否在白名单中
+ * 
+ * @param origin - 请求头中的Origin值
+ * @returns 如果请求源在允许列表中返回true，否则返回false
  */
 function isOriginAllowed(origin: string | null): boolean {
 	if (!origin) return false;
@@ -87,7 +125,11 @@ function isOriginAllowed(origin: string | null): boolean {
 }
 
 /**
- * Get client IP address
+ * 获取客户端IP地址
+ * 尝试从各种请求头中提取客户端的真实IP地址
+ * 
+ * @param request - 接收到的HTTP请求对象
+ * @returns 客户端IP地址字符串，如果无法确定则返回'unknown'
  */
 function getClientIP(request: Request): string {
 	// Try CF-Connecting-IP first (Cloudflare's real IP header)
@@ -105,7 +147,12 @@ function getClientIP(request: Request): string {
 }
 
 /**
- * Check rate limit for IP
+ * 检查IP地址的速率限制
+ * 实现基于KV存储的请求速率限制，防止API滥用
+ * 
+ * @param ip - 客户端IP地址
+ * @param env - 环境变量和绑定资源
+ * @returns 包含是否允许请求、剩余请求配额和重置时间的对象
  */
 async function checkRateLimit(ip: string, env: Env): Promise<{ allowed: boolean; remaining: number; resetTime: number }> {
 	if (!env.RATE_LIMIT_KV) {
@@ -184,8 +231,12 @@ async function checkRateLimit(ip: string, env: Env): Promise<{ allowed: boolean;
 }
 
 /**
- * Calculate a robust hash for the image data
- * Uses SHA-256 of the actual image content to ensure different images get different hashes
+ * 计算图像数据的稳健哈希值
+ * 使用图像内容的SHA-256哈希，结合图像大小信息，确保不同图像获得不同的哈希值
+ * 此哈希用于缓存键和图像唯一标识
+ * 
+ * @param imageData - 图像的二进制数据
+ * @returns 图像内容的哈希字符串
  */
 async function calculateImageHash(imageData: ArrayBuffer): Promise<string> {
 	// Create a more robust hash by including both content and size
@@ -212,7 +263,12 @@ async function calculateImageHash(imageData: ArrayBuffer): Promise<string> {
 }
 
 /**
- * Validate image format and size
+ * 验证图像格式和大小
+ * 检查上传的文件是否是支持的图像格式，且大小在允许范围内
+ * 
+ * @param file - 上传的文件对象
+ * @param maxSize - 允许的最大文件大小（字节）
+ * @returns 包含验证结果和可能的错误信息的对象
  */
 function validateImage(file: File, maxSize: number): { valid: boolean; error?: string } {
 	// Check file size
@@ -230,49 +286,12 @@ function validateImage(file: File, maxSize: number): { valid: boolean; error?: s
 }
 
 /**
- * Create demo response for fast testing
- * Coordinates are based on the example park image (3840x2160)
- */
-async function createDemoResponse(): Promise<DetectedElement[]> {
-	console.log('Using demo mode for fast response...');
-	
-	// Return mock detection results with coordinates scaled for 3840x2160 image
-	return [
-		{
-			type: 'tree',
-			confidence: 0.85,
-			description: 'Large tree in park (Demo)',
-			bbox: { x: 1200, y: 400, width: 800, height: 1200 }
-		},
-		{
-			type: 'grass',
-			confidence: 0.72,
-			description: 'Grass area (Demo)',
-			bbox: { x: 400, y: 1600, width: 2800, height: 500 }
-		},
-		{
-			type: 'sky',
-			confidence: 0.91,
-			description: 'Sky area (Demo)',
-			bbox: { x: 0, y: 0, width: 3840, height: 800 }
-		},
-		{
-			type: 'path',
-			confidence: 0.68,
-			description: 'Walking path (Demo)',
-			bbox: { x: 2400, y: 1200, width: 1200, height: 600 }
-		},
-		{
-			type: 'building',
-			confidence: 0.79,
-			description: 'Building structure (Demo)',
-			bbox: { x: 2800, y: 600, width: 800, height: 900 }
-		}
-	];
-}
-
-/**
- * Get image dimensions from buffer by parsing headers
+ * 从图像缓冲区解析头部信息获取图像尺寸
+ * 支持PNG、JPEG和WebP格式，通过直接解析文件头获取宽高信息
+ * 避免完整解码图像，提高性能
+ * 
+ * @param imageBuffer - 图像的二进制数据
+ * @returns 包含图像宽度和高度的对象
  */
 async function getImageDimensions(imageBuffer: ArrayBuffer): Promise<{width: number, height: number}> {
 	console.log('Parsing image dimensions from headers...');
@@ -339,17 +358,23 @@ async function getImageDimensions(imageBuffer: ArrayBuffer): Promise<{width: num
 	}
 }
 
+
 /**
- * Analyze image using Cloudflare AI
+ * 使用AI分析图像内容
+ * 调用Cloudflare AI的对象检测模型，分析图像并返回检测到的元素
+ * 
+ * @param imageBuffer - 图像的二进制数据
+ * @param env - 环境变量和绑定资源
+ * @returns 包含检测到的元素和图像信息的对象
  */
 async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{elements: DetectedElement[], imageInfo: {width: number, height: number, format: string, size: number}}> {
 	try {
 		console.log('Starting real AI image analysis...');
 		
-		// Get image dimensions
+		// 获取图像尺寸
 		const dimensions = await getImageDimensions(imageBuffer);
 		
-		// Use Cloudflare AI for real object detection
+		// 使用Cloudflare AI进行实际目标检测
 		const inputs = {
 			image: Array.from(new Uint8Array(imageBuffer))
 		};
@@ -359,7 +384,7 @@ async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{
 		
 		console.log('AI Response:', response);
 		
-		// Transform AI response to our format
+		// 将AI响应转换为我们的格式
 		const elements: DetectedElement[] = [];
 		
 		if (response && Array.isArray(response)) {
@@ -383,7 +408,7 @@ async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{
 			}
 		}
 		
-		// If no objects detected, provide fallback
+		// 如果没有检测到对象，提供回退响应
 		if (elements.length === 0) {
 			console.log('No objects detected, using fallback response');
 			elements.push({
@@ -408,26 +433,28 @@ async function analyzeImageWithAI(imageBuffer: ArrayBuffer, env: Env): Promise<{
 		});
 		
 		return { elements, imageInfo };
-	} catch (error) {
-		console.error('AI detection failed, falling back to demo mode:', error);
+	} 	catch (error) {
+		// 记录错误信息
+		console.error('AI detection failed:', error);
 		
-		// Fallback to demo response if AI fails
-		const dimensions = await getImageDimensions(imageBuffer);
-		const elements = await createDemoResponse();
+		// 添加更详细的错误信息
+		const errorMessage = error instanceof Error 
+			? `AI分析失败: ${error.message}` 
+			: '图像分析服务出现未知错误';
 		
-		const imageInfo = {
-			width: dimensions.width,
-			height: dimensions.height,
-			format: 'image/png',
-			size: imageBuffer.byteLength
-		};
-		
-		return { elements, imageInfo };
+		// 直接抛出错误，让上层调用处理
+		throw new Error(errorMessage);
 	}
 }
 
 /**
- * Handle image analysis endpoint
+ * 处理图像分析请求
+ * 主要API端点处理函数，接收图像文件，进行验证、处理和分析
+ * 实现速率限制、缓存和错误处理逻辑
+ * 
+ * @param request - HTTP请求对象
+ * @param env - 环境变量和绑定资源
+ * @returns HTTP响应对象
  */
 async function handleImageAnalysis(request: Request, env: Env): Promise<Response> {
 	const startTime = Date.now();
@@ -527,6 +554,14 @@ async function handleImageAnalysis(request: Request, env: Env): Promise<Response
 /**
  * Handle health check endpoint
  */
+/**
+ * 处理健康检查请求
+ * 返回后端服务状态、版本信息和配置概况
+ * 用于监控和调试目的
+ * 
+ * @param env - 环境变量和绑定资源
+ * @returns 包含服务状态信息的HTTP响应
+ */
 function handleHealthCheck(env: Env): Response {
 	const cacheEnabled = env.CACHE_ENABLED !== 'false';
 	return Response.json({
@@ -545,6 +580,14 @@ function handleHealthCheck(env: Env): Response {
 
 /**
  * Handle cache management endpoint
+ */
+/**
+ * 处理缓存管理请求
+ * 提供API端点用于查看、清除缓存信息
+ * 仅供开发和管理目的使用
+ * 
+ * @param request - HTTP请求对象
+ * @returns HTTP响应对象
  */
 function handleCacheManagement(request: Request): Response {
 	const url = new URL(request.url);
@@ -620,6 +663,14 @@ function handleCacheManagement(request: Request): Response {
 /**
  * Handle CORS preflight requests
  */
+/**
+ * 处理OPTIONS请求
+ * 实现CORS预检请求（preflight）响应
+ * 允许跨域资源请求所需的HTTP方法和头部
+ * 
+ * @param request - HTTP请求对象
+ * @returns 适当的OPTIONS响应对象
+ */
 function handleOptions(request: Request): Response {
 	const origin = request.headers.get('Origin');
 	const allowedOrigin = isOriginAllowed(origin) ? origin : null;
@@ -642,6 +693,14 @@ function handleOptions(request: Request): Response {
 
 /**
  * Add CORS headers to response
+ */
+/**
+ * 向响应添加CORS头部
+ * 为所有API响应添加正确的跨域资源共享头部
+ * 
+ * @param response - 原始HTTP响应对象
+ * @param request - 相关的HTTP请求对象
+ * @returns 添加了CORS头部的新响应对象
  */
 function addCorsHeaders(response: Response, request: Request): Response {
 	const origin = request.headers.get('Origin');
