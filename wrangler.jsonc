@@ -25,10 +25,9 @@
 	/**
 	 * Bindings
 	 * Bindings allow your Worker to interact with resources on the Cloudflare Developer Platform, including
-	 * databases, object storage, AI inference, real-time communication and more.
+	 * databases, object storage, real-time communication and more.
 	 * https://developers.cloudflare.com/workers/runtime-apis/bindings/
 	 */
-	"ai": { "binding": "AI" },
 	
 	/**
 	 * KV Namespaces for rate limiting
@@ -39,6 +38,11 @@
 			"binding": "RATE_LIMIT_KV",
 			"id": "35bf3b29809f411ab8d72562319c2180",
 			"preview_id": "37185e7c6e89428cbc78d9ef647c241c"
+		},
+		{
+			"binding": "CACHE_KV",
+			"id": "c06f5e2214484af1881796c57bac1005",
+			"preview_id": "de1fa5c888ea4e558a668f5e6da0ee9a"
 		}
 	],
 
@@ -47,6 +51,7 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": { 
+		"CACHE_ENABLED": "true",
 		"CACHE_TTL": "3600",
 		"MAX_FILE_SIZE": "15728640"
 	},

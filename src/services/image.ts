@@ -117,10 +117,20 @@ export function validateImage(file: File, maxSize: number): { valid: boolean; er
 		return { valid: false, error: `File size ${file.size} exceeds maximum allowed size of ${maxSize} bytes` };
 	}
 	
-	// Check file type
+	// Check file type (MIME type first, then file extension as fallback)
 	const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-	if (!validTypes.includes(file.type)) {
-		return { valid: false, error: `Invalid image format: ${file.type}. Supported formats: JPEG, PNG, WebP` };
+	const validExtensions = ['.jpg', '.jpeg', '.png', '.webp'];
+	
+	const hasValidMimeType = file.type && validTypes.includes(file.type.toLowerCase());
+	const hasValidExtension = validExtensions.some(ext => 
+		file.name.toLowerCase().endsWith(ext)
+	);
+	
+	if (!hasValidMimeType && !hasValidExtension) {
+		return { 
+			valid: false, 
+			error: `Invalid image format: ${file.type || 'unknown'}. Supported formats: JPEG, PNG, WebP` 
+		};
 	}
 	
 	return { valid: true };
